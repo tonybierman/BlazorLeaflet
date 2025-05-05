@@ -9,3 +9,5 @@ bundle.js
 bundle.js.map
 global.json
 
+/.vs/BlazorLeafletInterop/FileContentIndex
+/.vs/BlazorLeafletInterop/v17
