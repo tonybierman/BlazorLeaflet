@@ -15,4 +15,8 @@
       <ProjectReference Include="..\BlazorLeafletInterop\BlazorLeafletInterop.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Folder Include="wwwroot\js\" />
+    </ItemGroup>
+
 </Project>

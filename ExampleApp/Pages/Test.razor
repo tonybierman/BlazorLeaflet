@@ -1,0 +1,82 @@
+﻿@page "/"
+@using BlazorLeafletInterop.Models.Basics
+@using ExampleApp.Components
+
+<LeafletMap Coordinates="Coords" Names="Names" />
+
+@code {
+    private List<LatLng> Coords { get; set; } = new();
+    private List<string> Names { get; set; } = new();
+
+    protected override void OnInitialized()
+    {
+        Coords = GetManilaGalleonRoute();
+        Names = GetManilaGalleonRouteNames();
+    }
+
+    private List<LatLng> GetManilaGalleonRoute()
+    {
+        return new List<LatLng>
+        {
+            new LatLng(14.48, 120.90),
+            new LatLng(14.38, 120.60),
+            new LatLng(13.80, 120.30),
+            new LatLng(13.76, 121.03),
+            new LatLng(13.70, 121.80),
+            new LatLng(13.50, 122.20),
+            new LatLng(13.30, 122.40),
+            new LatLng(12.90, 122.60),
+            new LatLng(12.60, 123.00),
+            new LatLng(12.30, 123.50),
+            new LatLng(12.00, 123.80),
+            new LatLng(12.20, 124.00),
+            new LatLng(12.40, 124.10),
+            new LatLng(12.50, 124.20),
+            new LatLng(12.60, 124.40),
+            new LatLng(12.80, 124.60),
+            new LatLng(13.00, 124.80),
+            new LatLng(13.20, 125.00),
+            new LatLng(13.80, 126.50),
+            new LatLng(15.00, 135.00),
+            new LatLng(31.00, 140.00),
+            new LatLng(36.50, 150.00),
+            new LatLng(40.44, -124.40),
+            new LatLng(35.00, -124.00),
+            new LatLng(28.50, -115.20),
+            new LatLng(16.86, -99.88)
+        };
+    }
+
+    private List<string> GetManilaGalleonRouteNames()
+    {
+        return new List<string>
+        {
+            "Cavite, Manila Bay",
+            "Mariveles-Corregidor Boca",
+            "Off Fortun and Ambil",
+            "Cape Santiago",
+            "Mindoro-Maricaban Strait",
+            "Punta de Escarceo, Isla Verde",
+            "Baco Islets, Calapan",
+            "Punta Gorda de Pola",
+            "Tres Reyes-Dos Hermanas",
+            "Marinduque-Banton Bocana",
+            "Burias-Masbate",
+            "Punta de San Miguel-Diablo",
+            "San Jacinto, Ticao",
+            "Seaward from San Jacinto",
+            "Naranjos-Calantas",
+            "Capul",
+            "Sorsogon-San Bernardino",
+            "Embocadero",
+            "E by NE 50 Leagues",
+            "Toward Ladrones",
+            "Los Volcanes, 31° Latitude",
+            "36-37° Latitude",
+            "Cape Mendocino",
+            "35° Latitude",
+            "Cedros Island",
+            "Acapulco"
+        };
+    }
+}

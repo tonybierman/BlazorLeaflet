@@ -1,0 +1,336 @@
+﻿@using BlazorLeafletInterop.Components
+@using BlazorLeafletInterop.Components.Layers.Raster
+@using BlazorLeafletInterop.Components.Layers.Vector
+@using BlazorLeafletInterop.Components.Controls
+@using BlazorLeafletInterop.Plugins.Leaflet.MiniMap.Components
+@using BlazorLeafletInterop.Models.Basics
+@using BlazorLeafletInterop.Components.Layers.UI
+@using BlazorLeafletInterop.Factories
+@using BlazorLeafletInterop.Models.Options.Layer.Raster
+@using BlazorLeafletInterop.Models.Options.Map
+@using System.Timers
+
+<Map @ref="Map" Class="@MapClass" MapOptions="MapOptions" AfterRender="AfterRender">
+    <TileLayer UrlTemplate="@TileLayerUrl" />
+    @if (ShowZoomControl)
+    {
+        <ControlZoom />
+    }
+    @if (ShowScaleControl)
+    {
+        <ControlScale />
+    }
+    @if (ShowMiniMap)
+    {
+        <LeafletMiniMap TileRef="MiniMapTileLayer" />
+    }
+    @if (Coordinates != null && Names != null)
+    {
+        @for (int i = 0; i < Coordinates.Count; i++)
+        {
+            var coord = Coordinates[i];
+            var name = Names[i];
+            if (ShowOriginalMarkers)
+            {
+                <Marker LatLng="coord">
+                    <Popup>
+                        @name (@coord.Lat, @coord.Lng)
+                    </Popup>
+                    <Tooltip>
+                        @name
+                    </Tooltip>
+                </Marker>
+            }
+            if (ShowShiftedMarkers)
+            {
+                <Marker LatLng="new LatLng(coord.Lat, coord.Lng - 360)">
+                    <Popup>
+                        @name (@coord.Lat, @(coord.Lng - 360))
+                    </Popup>
+                    <Tooltip>
+                        @name
+                    </Tooltip>
+                </Marker>
+                <Marker LatLng="new LatLng(coord.Lat, coord.Lng + 360)">
+                    <Popup>
+                        @name (@coord.Lat, @(coord.Lng + 360))
+                    </Popup>
+                    <Tooltip>
+                        @name
+                    </Tooltip>
+                </Marker>
+            }
+        }
+    }
+</Map>
+@if (ShowControlPanel)
+{
+    <div style="position: absolute; top: 5%; left: 5%; z-index: 10000; background-color: aquamarine; padding: 10px; border-radius: 10px;">
+        <h3>@ControlPanelTitle</h3>
+        @if (ShowSwitchMarkersButton)
+        {
+            <button @onclick="SwitchMarkers">Switch Markers</button>
+        }
+        @if (ShowFitToBoundsButton)
+        {
+            <button @onclick="FitToBoundsTest">Fit To Bounds</button>
+        }
+    </div>
+}
+
+@code {
+    [Inject]
+    public IIconFactory IconFactoryInterop { get; set; } = default!;
+
+    [Inject]
+    public ILayerFactory LayerFactory { get; set; } = default!;
+
+    [Inject]
+    public IJSRuntime JSRuntime { get; set; } = default!; // Required for CheckWindowSize
+
+    [Parameter]
+    public List<LatLng>? Coordinates { get; set; }
+
+    [Parameter]
+    public List<string>? Names { get; set; }
+
+    [Parameter]
+    public string MapClass { get; set; } = "map";
+
+    [Parameter]
+    public MapOptions MapOptions { get; set; } = new MapOptions { PreferCanvas = true, Center = new LatLng(14.58, 120.97), Zoom = 2 };
+
+    [Parameter]
+    public string TileLayerUrl { get; set; } = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+
+    [Parameter]
+    public bool ShowZoomControl { get; set; } = true;
+
+    [Parameter]
+    public bool ShowScaleControl { get; set; } = true;
+
+    [Parameter]
+    public bool ShowMiniMap { get; set; } = true;
+
+    [Parameter]
+    public bool ShowOriginalMarkers { get; set; } = true;
+
+    [Parameter]
+    public bool ShowShiftedMarkers { get; set; } = true;
+
+    [Parameter]
+    public bool ShowControlPanel { get; set; } = true;
+
+    [Parameter]
+    public string ControlPanelTitle { get; set; } = "Blazor Leaflet Interop";
+
+    [Parameter]
+    public bool ShowSwitchMarkersButton { get; set; } = true;
+
+    [Parameter]
+    public bool ShowFitToBoundsButton { get; set; } = true;
+
+    private Map? Map { get; set; }
+    private IJSObjectReference? MiniMapTileLayer { get; set; }
+    private Dictionary<string, IJSObjectReference> OverlayLayers { get; set; } = new();
+    private bool IsFirstMarker { get; set; } = true;
+    private List<Polyline> Polylines { get; set; } = new();
+    private System.Timers.Timer? resizeTimer;
+    private double lastWindowWidth = -1; // Initialize to invalid value
+    private double lastWindowHeight = -1; // Initialize to invalid value
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Coordinates == null || Names == null)
+        {
+            Coordinates = new List<LatLng>();
+            Names = new List<string>();
+        }
+        MiniMapTileLayer = await LayerFactory.CreateTileLayer(TileLayerUrl, new TileLayerOptions());
+
+        // Set up a timer to periodically check window size
+        resizeTimer = new System.Timers.Timer(500); // Check every 500ms
+        resizeTimer.Elapsed += async (sender, e) => await CheckWindowSize();
+        resizeTimer.AutoReset = true;
+        resizeTimer.Start();
+
+        await base.OnInitializedAsync();
+    }
+
+    private async Task CheckWindowSize()
+    {
+        // Get the current window size using JavaScript interop (minimal interop usage)
+        try
+        {
+            var dimensions = await JSRuntime.InvokeAsync<int[]>("eval", new object[] { "[window.innerWidth, window.innerHeight]" });
+            double currentWidth = dimensions[0];
+            double currentHeight = dimensions[1];
+
+            // Compare with the last known size
+            if (currentWidth != lastWindowWidth || currentHeight != lastWindowHeight)
+            {
+                Console.WriteLine($"Window size changed: {currentWidth}x{currentHeight} (was {lastWindowWidth}x{lastWindowHeight})");
+                lastWindowWidth = currentWidth;
+                lastWindowHeight = currentHeight;
+
+                // Force a re-render to trigger OnAfterRenderAsync
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error checking window size: {ex.Message}");
+        }
+    }
+
+    private async Task AfterRender()
+    {
+        if (Map is null || Coordinates == null) return;
+
+        // Ensure the map size is correct after rendering
+        if (Map.MapRef != null)
+        {
+            Console.WriteLine("Calling invalidateSize in AfterRender...");
+            await Map.MapRef.InvokeVoidAsync("invalidateSize");
+        }
+
+        var segments = CreateContinuousSegments(Coordinates);
+
+        Polylines.Clear();
+        for (int i = 0; i < segments.Count; i++)
+        {
+            var polyline = new Polyline();
+            await polyline.Initialize(LayerFactory, Map);
+            await polyline.SetLatLngs(segments[i]);
+            await polyline.AddTo<Polyline>(Map.MapRef, polyline.PolylineRef);
+            if (polyline.PolylineRef is not null)
+            {
+                OverlayLayers[$"Polyline_{i}"] = polyline.PolylineRef;
+            }
+            Polylines.Add(polyline);
+        }
+    }
+
+    private List<List<LatLng>> CreateContinuousSegments(List<LatLng> coords)
+    {
+        var segments = new List<List<LatLng>>();
+        if (coords.Count == 0) return segments;
+
+        var currentSegment = new List<LatLng> { coords[0] };
+
+        for (int i = 1; i < coords.Count; i++)
+        {
+            var prev = coords[i - 1];
+            var curr = coords[i];
+
+            if (Math.Abs(curr.Lng - prev.Lng) > 180)
+            {
+                double lng1 = prev.Lng;
+                double lng2 = curr.Lng;
+
+                if (lng1 > lng2)
+                {
+                    lng2 += 360;
+                }
+                else
+                {
+                    lng1 += 360;
+                }
+
+                double t = (180 - lng1) / (lng2 - lng1);
+                double latAtMeridian = prev.Lat + t * (curr.Lat - prev.Lat);
+
+                currentSegment.Add(new LatLng(latAtMeridian, 180));
+                segments.Add(currentSegment);
+
+                currentSegment = new List<LatLng> { new LatLng(latAtMeridian, -180) };
+            }
+
+            currentSegment.Add(curr);
+        }
+
+        if (currentSegment.Count > 0)
+        {
+            segments.Add(currentSegment);
+        }
+
+        var additionalSegments = new List<List<LatLng>>();
+        foreach (var segment in segments)
+        {
+            var shiftedLeft = segment.Select(c => new LatLng(c.Lat, c.Lng - 360)).ToList();
+            var shiftedRight = segment.Select(c => new LatLng(c.Lat, c.Lng + 360)).ToList();
+            additionalSegments.Add(shiftedLeft);
+            additionalSegments.Add(shiftedRight);
+        }
+
+        segments.AddRange(additionalSegments);
+        return segments;
+    }
+
+    private void SwitchMarkers()
+    {
+        IsFirstMarker = !IsFirstMarker;
+        ShowOriginalMarkers = IsFirstMarker;
+        ShowShiftedMarkers = !IsFirstMarker;
+        StateHasChanged();
+    }
+
+    private async void FitToBoundsTest()
+    {
+        if (Map is null || Coordinates == null || Coordinates.Count == 0) return;
+
+        // Calculate center latitude (was hardcoded as 28.65)
+        var minLat = Coordinates.Min(c => c.Lat); // e.g., 16.86
+        var maxLat = Coordinates.Max(c => c.Lat); // e.g., 40.44
+        double centerLat = (minLat + maxLat) / 2; // e.g., (16.86 + 40.44) / 2 = 28.65
+
+        // Calculate center longitude (was hardcoded as -154.94)
+        // To match the hardcoded value, adjust positive longitudes by -360°
+        var adjustedLngs = Coordinates.Select(c => c.Lng > 0 ? c.Lng - 360 : c.Lng).ToList(); // e.g., 150° → -210°
+        var minLng = adjustedLngs.Min(); // e.g., -210
+        var maxLng = adjustedLngs.Max(); // e.g., -99.88
+        double centerLng = (minLng + maxLng) / 2; // e.g., (-210 + -99.88) / 2 = -154.94
+
+        // Keep zoom hardcoded (was 3)
+        double zoom = 3;
+
+        // Log the values for verification
+        Console.WriteLine($"Center: ({centerLat}, {centerLng}), Zoom: {zoom}");
+
+        // Set the map's view directly
+        await Map.SetView(new LatLng(centerLat, centerLng), zoom);
+
+        // Ensure the map size is updated after setting the view
+        if (Map.MapRef != null)
+        {
+            Console.WriteLine("Calling invalidateSize in FitToBoundsTest...");
+            await Map.MapRef.InvokeVoidAsync("invalidateSize");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Console.WriteLine($"OnAfterRenderAsync called (firstRender: {firstRender})");
+        if (Map != null && Map.MapRef != null)
+        {
+            Console.WriteLine("Calling invalidateSize in OnAfterRenderAsync...");
+            await Map.MapRef.InvokeVoidAsync("invalidateSize");
+        }
+        else
+        {
+            Console.WriteLine("Map or MapRef is null in OnAfterRenderAsync.");
+        }
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    public void Dispose()
+    {
+        // Clean up the timer
+        if (resizeTimer != null)
+        {
+            resizeTimer.Stop();
+            resizeTimer.Dispose();
+            resizeTimer = null;
+        }
+    }
+}
